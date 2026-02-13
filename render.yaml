@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: codecraft-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile.render
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: CORS_ORIGINS
+        sync: false  # set manually after Vercel deploy
+      - key: AUTH_ENABLED
+        value: "false"
+      - key: ENVIRONMENT
+        value: production

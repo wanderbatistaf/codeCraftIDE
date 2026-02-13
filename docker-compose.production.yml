@@ -1,0 +1,118 @@
+version: '3.8'
+
+services:
+  # Backend API Service
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fgl-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount workspace for file storage
+      - ./workspace:/app/workspace
+      # Preserve Python cache
+      - backend-cache:/root/.cache
+    environment:
+      - PYTHONUNBUFFERED=1
+      - ENVIRONMENT=production
+      - CORS_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost:9002
+    networks:
+      - fgl-network
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://127.0.0.1:8000/api/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # Studio IDE Service (Next.js)
+  studio:
+    build:
+      context: ./studio
+      dockerfile: Dockerfile
+    container_name: fgl-studio
+    ports:
+      - "9002:9002"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_TELEMETRY_DISABLED=1
+    networks:
+      - fgl-network
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9002"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  # Informix Database Service
+  informix:
+    image: ibmcom/informix-developer-database:14.10.FC7W1DE
+    container_name: fgl-informix
+    ports:
+      - "9088:9088"
+      - "9089:9089"
+      - "27017:27017"
+      - "27018:27018"
+      - "27883:27883"
+    environment:
+      - LICENSE=accept
+      - SIZE=small
+      - DB_LOCALE=en_US.utf8
+      - DBDATE=Y4MD-
+      - DB_USER=informix
+      - DB_PASS=in4mix
+      - INFORMIX_DB=stores_demo
+    volumes:
+      - informix-data:/opt/ibm/data
+    networks:
+      - fgl-network
+    healthcheck:
+      test: [ "CMD-SHELL", "echo 'SELECT 1 FROM systables WHERE tabid = 1;' | dbaccess sysmaster - || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    privileged: true
+    restart: unless-stopped
+
+  # SSH Gateway Service (for terminal access)
+  ssh-gateway:
+    image: lscr.io/linuxserver/openssh-server:latest
+    container_name: fgl-ssh-gateway
+    hostname: ssh-gateway
+    ports:
+      - "2222:2222"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Sao_Paulo
+      - PUBLIC_KEY_FILE=/config/.ssh/authorized_keys
+      - SUDO_ACCESS=true
+      - PASSWORD_ACCESS=true
+      - USER_PASSWORD=in4mix
+      - USER_NAME=informix
+    volumes:
+      - ssh-config:/config
+      - ./workspace:/workspace:ro
+    networks:
+      - fgl-network
+    restart: unless-stopped
+
+
+networks:
+  fgl-network:
+    driver: bridge
+
+volumes:
+  backend-cache:
+  informix-data:
+  ssh-config:
